@@ -11,7 +11,7 @@
     <link rel="shortcut icon" href="../../img/favicon.ico">
 
     
-    <title>Задание: - web_labs</title>
+    <title>Лабораторная работа - web_labs</title>
     
 
     <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.12.0/css/all.css">
@@ -111,13 +111,13 @@
                 
                 
                 
-                    <li class="dropdown">
+                    <li class="dropdown active">
                         <a href="#" class="dropdown-toggle" data-toggle="dropdown">Lab 3 <b class="caret"></b></a>
                         <ul class="dropdown-menu">
                         
                             
-<li >
-    <a href="../../spring_lab3/lab/">Лабораторная работа</a>
+<li class="active">
+    <a href="./">Лабораторная работа</a>
 </li>
 
                         
@@ -133,6 +133,16 @@
                             <i class="fas fa-search"></i> Search
                         </a>
                     </li>
+                    <li >
+                        <a rel="prev" href="../../spring_lab2/lab/">
+                            <i class="fas fa-arrow-left"></i> Previous
+                        </a>
+                    </li>
+                    <li class="disabled">
+                        <a rel="next" >
+                            Next <i class="fas fa-arrow-right"></i>
+                        </a>
+                    </li>
             </ul>
         </div>
     </div>
@@ -143,124 +153,225 @@
         
         <div class="col-md-3"><div class="bs-sidebar hidden-print affix well" role="complementary">
     <ul class="nav bs-sidenav">
-        <li class="first-level active"><a href="#_1">Задание:</a></li>
-        <li class="first-level "><a href="#_2">Стек:</a></li>
-        <li class="first-level "><a href="#_3">Инструкция по запуску</a></li>
+        <li class="first-level active"><a href="#fastapi">Упаковываю парсер в FastApi</a></li>
+        <li class="first-level "><a href="#dockerfile-">Написание dockerfile-ов</a></li>
+        <li class="first-level "><a href="#celery">Добавление celery</a></li>
+        <li class="first-level "><a href="#docker-compose">docker-compose</a></li>
+        <li class="first-level "><a href="#_1">Демонстрация работы (логи)</a></li>
     </ul>
 </div></div>
         <div class="col-md-9" role="main">
 
-<h1 id="_1">Задание:</h1>
-<p>Реализовать серверную часть приложения. Клиент подключается к серверу. В ответ
-клиент получает http-сообщение, содержащее html-страницу, которую сервер
-подгружает из файла <code>index.html</code>.</p>
-<h1 id="_2">Стек:</h1>
-<ul>
-<li>ЯП: Java</li>
-<li>Пакет: net, io</li>
-<li>Протокол: HTTP</li>
-</ul>
-<h1 id="_3">Инструкция по запуску</h1>
-<p>Выполните команды в папке <code>Lr1\task_3\src\main\java\ru\barkhatnat</code></p>
-<ol>
-<li>Запуск сервера<ul>
-<li><code>cd server</code></li>
-<li><code>javac HttpServer.java</code></li>
-<li><code>java HttpServer.java &lt;ip&gt; &lt;port&gt;</code> (вы можете указать желаемый ip и порт, по умолчанию <code>localhost:1234</code>)</li>
-</ul>
-</li>
-<li>Отправить запрос через браузер<ul>
-<li>Перейти по адресу <code>http://&lt;ip&gt;:&lt;port&gt;/</code> в браузере. (По умолчанию <code>http://localhost:1234/</code>)</li>
-</ul>
-</li>
-</ol>
-<pre><code>public class HtmlReader {
-    private static final String NOT_FOUND_HTML = &quot;&lt;html&gt;&lt;body&gt;&lt;h1&gt;404 NOT FOUND&lt;/h1&gt;&lt;/body&gt;&lt;/html&gt;&quot;;
-    private static final String SERVER_ERROR = &quot;&lt;html&gt;&lt;body&gt;&lt;h1&gt;500 Internal Server Error&lt;/h1&gt;&lt;/body&gt;&lt;/html&gt;&quot;;
+<h1 id="fastapi">Упаковываю парсер в FastApi</h1>
+<p>Нужно было немного поменять код, по сравнению со 2 лабораторной, чтобы получение было по одному url, а не подгрузка их из массива.</p>
+<pre><code>import aiohttp  
+from bs4 import BeautifulSoup  
+from fastapi import FastAPI, HTTPException, Query  
 
-    public static String readHtmlFile(String filePath) {
-        StringBuilder htmlContent = new StringBuilder();
-        String line;
-        File file = new File(filePath);
-        if (!file.exists()) {
-            return NOT_FOUND_HTML;
-        }
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            while ((line = reader.readLine()) != null) {
-                htmlContent.append(line).append(&quot;\n&quot;);
-            }
-        } catch (IOException e) {
-            return SERVER_ERROR;
-        }
-        return htmlContent.toString();
+from db import save_to_db  
+from parse_utils import parse_title_author, fetch  
+
+app = FastAPI()  
+
+
+@app.get(&quot;/parse&quot;)  
+async def parse_url(url: str = Query(...)):  
+    async with aiohttp.ClientSession() as session:  
+        html = await fetch(session, url)  
+    if not html:  
+        raise HTTPException(500, &quot;Failed to fetch page&quot;)  
+
+    soup = BeautifulSoup(html, &quot;html.parser&quot;)  
+    full_title = soup.title.string.strip() if soup.title and soup.title.string else &quot;No title&quot;  
+    title, author = parse_title_author(full_title)  
+
+    try:  
+        await save_to_db(url, title, author)  
+    except Exception as e:  
+        raise HTTPException(status_code=500, detail=f&quot;Error saving to DB: {e}&quot;)  
+
+    return {  
+        &quot;url&quot;: url,  
+        &quot;title&quot;: title,  
+        &quot;author&quot;: author  
     }
-
-}
 </code></pre>
-<pre><code>public class HttpResponseSender {
-    private static final String HTTP_OK = &quot;HTTP/1.1 200 OK&quot;;
-    private static final String CONTENT_TYPE = &quot;Content-Type: text/html; charset=UTF-8&quot;;
-
-    public static void sendOkResponseWithContent(PrintWriter out, String htmlContent) {
-        out.println(HTTP_OK);
-        out.println(CONTENT_TYPE);
-        out.println(&quot;Content-Length: &quot; + htmlContent.length());
-        out.println();
-        out.print(htmlContent);
-        out.flush();
-    }
-}
+<h1 id="dockerfile-">Написание dockerfile-ов</h1>
+<p>Для парсера:</p>
+<pre><code>FROM python:3.11-slim  
+WORKDIR /app  
+COPY requirements.txt .  
+RUN pip install --no-cache-dir -r requirements.txt  
+COPY . .  
+EXPOSE 8000  
+CMD [&quot;uvicorn&quot;, &quot;main:app&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8000&quot;]
 </code></pre>
-<pre><code>public class HttpServer {
-    private static final String HTML_FILE_PATH = &quot;task_3/src/main/java/ru/barkhatnat/server/index.html&quot;;
-
-    public static void main(String[] args) {
-        final String address = args.length &gt; 0 ? args[0] : &quot;localhost&quot;;
-        final int port = args.length &gt; 1 ? Integer.parseInt(args[1]) : 1234;
-        try (ServerSocket serverSocket = new ServerSocket(port, 0, InetAddress.getByName(address))) {
-            System.out.println(&quot;Сервер запущен на порту &quot; + port);
-            while (true) {
-                try (Socket clientSocket = serverSocket.accept()) {
-                    System.out.println(&quot;Подключился клиент: &quot; + clientSocket.getInetAddress() + &quot;:&quot; + clientSocket.getPort());
-                    handleRequest(clientSocket);
-                } catch (IOException e) {
-                    System.err.println(&quot;Error accepting client connection: &quot; + e.getMessage());
-                }
-            }
-        } catch (IOException e) {
-            System.err.printf(&quot;Ошибка передачи данных (%s:%d): %s&quot;, address, port, e.getMessage());
-        } catch (Exception exception) {
-            System.err.println(&quot;Ошибка приложения:&quot;);
-            exception.printStackTrace(System.err);
-        }
-    }
-
-    private static void handleRequest(Socket clientSocket) {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
-
-            String requestLine = in.readLine();
-            System.out.println(&quot;Запрос: &quot; + requestLine);
-            String htmlContent = HtmlReader.readHtmlFile(HTML_FILE_PATH);
-            HttpResponseSender.sendOkResponseWithContent(out, htmlContent);
-
-        } catch (IOException e) {
-            System.err.println(&quot;Ошибка отправки запроса &quot; + e.getMessage());
-        }
-    }
-}
+<p>Для аппа:</p>
+<pre><code>FROM python:3.11-slim  
+WORKDIR /app  
+COPY requirements.txt .  
+RUN apt-get update &amp;&amp; apt-get install -y --fix-missing gcc libpq-dev &amp;&amp; rm -rf /var/lib/apt/lists/*  
+RUN pip install --no-cache-dir -r requirements.txt  
+COPY . .  
+ENV PYTHONUNBUFFERED=1  
+CMD [&quot;uvicorn&quot;, &quot;main:app&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8000&quot;]
 </code></pre>
-<pre><code>&lt;!DOCTYPE html&gt;
-&lt;html lang=&quot;en&quot;&gt;
-&lt;head&gt;
-    &lt;meta charset=&quot;UTF-8&quot;&gt;
-    &lt;title&gt;HTTP Server&lt;/title&gt;
-&lt;/head&gt;
-&lt;body&gt;
-&lt;h1&gt;Вы видите содержимое файла index.html &lt;/h1&gt;
-&lt;/body&gt;
-&lt;/html&gt;
-</code></pre></div>
+<p>Так же для каждого были написаны requirements.txt</p>
+<h1 id="celery">Добавление celery</h1>
+<pre><code>from celery import Celery  
+import os  
+
+CELERY_BROKER_URL = os.getenv(&quot;CELERY_BROKER_URL&quot;, &quot;redis://redis:6379/0&quot;)  
+
+celery = Celery(  
+    &quot;tasks&quot;,  
+    broker=CELERY_BROKER_URL,  
+    backend=CELERY_BROKER_URL  
+)  
+
+celery.conf.imports = ('tasks',)
+</code></pre>
+<pre><code>from celery_app import celery  
+import httpx  
+
+@celery.task  
+def parse_url_task(url: str):  
+    try:  
+        response = httpx.get(&quot;http://parser_app:8000/parse&quot;, params={&quot;url&quot;: url}, timeout=10)  
+        return response.json()  
+    except Exception as e:  
+        return {&quot;error&quot;: str(e)}
+</code></pre>
+<p>Контроллер </p>
+<pre><code>from fastapi import APIRouter  
+
+from tasks import parse_url_task  
+
+router = APIRouter()  
+
+
+@router.get(&quot;/parse&quot;)  
+def parse_async(url: str):  
+    task = parse_url_task.delay(url)  
+    return {&quot;message&quot;: &quot;Task submitted&quot;, &quot;task_id&quot;: task.id}
+</code></pre>
+<h1 id="docker-compose">docker-compose</h1>
+<pre><code>version: &quot;3.9&quot;
+
+services:
+
+  postgres_db:
+
+    image: postgres:15
+
+    restart: always
+
+    environment:
+
+      POSTGRES_USER: nata
+
+      POSTGRES_PASSWORD: 1
+
+      POSTGRES_DB: bookcrossing
+
+    volumes:
+
+      - pgdata:/var/lib/postgresql/data
+
+    ports:
+
+      - &quot;5432:5432&quot;
+
+
+
+  fastapi_app:
+
+    build:
+
+      context: ./lr1
+
+    depends_on:
+
+      - postgres_db
+
+    environment:
+
+      DATABASE_URL: postgresql://nata:1@postgres_db:5432/bookcrossing
+
+    ports:
+
+      - &quot;8000:8000&quot;
+
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+
+
+  parser_app:
+
+    build:
+
+      context: ./parser
+
+    depends_on:
+
+      - postgres_db
+
+    environment:
+
+      DATABASE_URL: postgresql://nata:1@postgres_db:5432/bookcrossing
+
+    ports:
+
+      - &quot;8001:8000&quot;
+
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  celery_worker:
+
+    build:
+
+      context: ./lr1
+
+    container_name: celery_worker
+
+    command: celery -A celery_app.celery worker --loglevel=info
+
+    volumes:
+
+      - ./lr1:/app
+
+    depends_on:
+
+      - redis
+
+      - parser_app
+
+    environment:
+
+      - CELERY_BROKER_URL=redis://redis:6379/0
+
+
+
+  redis:
+
+    image: redis:7-alpine
+
+    container_name: redis
+
+    ports:
+
+      - &quot;6379:6379&quot;
+
+
+
+volumes:
+
+  pgdata:
+</code></pre>
+<h1 id="_1">Демонстрация работы (логи)</h1>
+<p><img alt="Описание" src="../../assets/Pasted%20image%2020250601114838.png" />
+Попробуем получить книгу через апи 
+<img alt="Описание" src="../../assets/Pasted%20image%2020250601114912.png" /></p></div>
         
         
     </div>
